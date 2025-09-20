@@ -1,9 +1,15 @@
 import os
 
+PROJECT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "."))
+
+
 DEFAULT_CONFIG = {
-    "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
+    "project_dir": PROJECT_DIR,
     "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", "./results"),
-    "data_dir": "/Users/yluo/Documents/Code/ScAI/FR1-data",
+    "data_dir": os.getenv(
+        "TRADINGAGENTS_DATA_DIR",
+        os.path.join(PROJECT_DIR, "dataflows", "data_cache"),
+    ),
     "data_cache_dir": os.path.join(
         os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
         "dataflows/data_cache",
@@ -19,4 +25,5 @@ DEFAULT_CONFIG = {
     "max_recur_limit": 100,
     # Tool settings
     "online_tools": True,
+    "offline_tools": True,
 }

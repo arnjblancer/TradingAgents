@@ -46,7 +46,10 @@ class TradingAgentsGraph:
             config: Configuration dictionary. If None, uses default config
         """
         self.debug = debug
-        self.config = config or DEFAULT_CONFIG
+        base_config = DEFAULT_CONFIG.copy()
+        if config:
+            base_config.update(config)
+        self.config = base_config
 
         # Update the interface's config
         set_config(self.config)
@@ -83,7 +86,10 @@ class TradingAgentsGraph:
         self.tool_nodes = self._create_tool_nodes()
 
         # Initialize components
-        self.conditional_logic = ConditionalLogic()
+        self.conditional_logic = ConditionalLogic(
+            max_debate_rounds=self.config.get("max_debate_rounds", 1),
+            max_risk_discuss_rounds=self.config.get("max_risk_discuss_rounds", 1),
+        )
         self.graph_setup = GraphSetup(
             self.quick_thinking_llm,
             self.deep_thinking_llm,
@@ -97,7 +103,9 @@ class TradingAgentsGraph:
             self.conditional_logic,
         )
 
-        self.propagator = Propagator()
+        self.propagator = Propagator(
+            max_recur_limit=self.config.get("max_recur_limit", 100)
+        )
         self.reflector = Reflector(self.quick_thinking_llm)
         self.signal_processor = SignalProcessor(self.quick_thinking_llm)
 
@@ -111,46 +119,62 @@ class TradingAgentsGraph:
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources."""
+
+        use_online_tools = self.config.get("online_tools", False)
+        use_offline_tools = self.config.get("offline_tools", True)
+
+        def build_node(
+            online_tools: List, offline_tools: List, name: str
+        ) -> ToolNode:
+            tools: List = []
+            if use_online_tools:
+                tools.extend(online_tools)
+            if use_offline_tools:
+                tools.extend(offline_tools)
+            if not tools:
+                raise ValueError(
+                    f"No tools enabled for {name} analysts. Enable online or offline tools."
+                )
+            return ToolNode(tools)
+
         return {
-            "market": ToolNode(
+            "market": build_node(
                 [
-                    # online tools
                     self.toolkit.get_YFin_data_online,
                     self.toolkit.get_stockstats_indicators_report_online,
-                    # offline tools
+                ],
+                [
                     self.toolkit.get_YFin_data,
                     self.toolkit.get_stockstats_indicators_report,
-                ]
+                ],
+                "market",
             ),
-            "social": ToolNode(
-                [
-                    # online tools
-                    self.toolkit.get_stock_news_openai,
-                    # offline tools
-                    self.toolkit.get_reddit_stock_info,
-                ]
+            "social": build_node(
+                [self.toolkit.get_stock_news_openai],
+                [self.toolkit.get_reddit_stock_info],
+                "social",
             ),
-            "news": ToolNode(
+            "news": build_node(
                 [
-                    # online tools
                     self.toolkit.get_global_news_openai,
                     self.toolkit.get_google_news,
-                    # offline tools
+                ],
+                [
                     self.toolkit.get_finnhub_news,
                     self.toolkit.get_reddit_news,
-                ]
+                ],
+                "news",
             ),
-            "fundamentals": ToolNode(
+            "fundamentals": build_node(
+                [self.toolkit.get_fundamentals_openai],
                 [
-                    # online tools
-                    self.toolkit.get_fundamentals_openai,
-                    # offline tools
                     self.toolkit.get_finnhub_company_insider_sentiment,
                     self.toolkit.get_finnhub_company_insider_transactions,
                     self.toolkit.get_simfin_balance_sheet,
                     self.toolkit.get_simfin_cashflow,
                     self.toolkit.get_simfin_income_stmt,
-                ]
+                ],
+                "fundamentals",
             ),
         }
 

@@ -271,7 +271,30 @@ def _run_backtest_for_ticker(
     results_path = ticker_dir / "backtest_log.csv"
     results.to_csv(results_path, index=False)
 
-    total_return = (results["daily_return"].add(1.0).prod() - 1.0) if not results.empty else 0.0
+    if results.empty:
+        total_return = 0.0
+        max_drawdown = 0.0
+        annual_average_return = 0.0
+    else:
+        total_return = results["daily_return"].add(1.0).prod() - 1.0
+
+        equity_curve = results["equity"]
+        running_max = equity_curve.cummax().replace(0.0, np.nan)
+        drawdowns = equity_curve.divide(running_max) - 1.0
+        drawdowns = drawdowns.fillna(0.0)
+        max_drawdown = float(abs(drawdowns.min()))
+
+        final_equity = float(equity_curve.iloc[-1])
+        if initial_capital > 0 and final_equity > 0:
+            years = max(len(results) / 252.0, 1.0 / 252.0)
+            annual_average_return = float(
+                np.power(final_equity / initial_capital, 1.0 / years) - 1.0
+            )
+        elif initial_capital > 0 and final_equity == 0:
+            annual_average_return = -1.0
+        else:
+            annual_average_return = -1.0
+
     summary: Summary = {
         "ticker": ticker,
         "start_date": start.isoformat(),
@@ -279,6 +302,8 @@ def _run_backtest_for_ticker(
         "num_observations": int(len(results)),
         "final_equity": equity,
         "total_return": total_return,
+        "max_drawdown": max_drawdown,
+        "annual_average_return": annual_average_return,
         "long_days": int((results["position"] == 1).sum()) if not results.empty else 0,
         "short_days": int((results["position"] == -1).sum()) if not results.empty else 0,
         "flat_days": int((results["position"] == 0).sum()) if not results.empty else 0,
@@ -319,8 +344,13 @@ def main() -> None:
         )
         summaries.append(summary)
         print(
-            f"  {ticker}: total_return={summary['total_return']:.2%}, "
-            f"final_equity={summary['final_equity']:.2f}"
+            "  "
+            + (
+                f"{ticker}: total_return={summary['total_return']:.2%}, "
+                f"annual_avg_return={summary['annual_average_return']:.2%}, "
+                f"max_drawdown={summary['max_drawdown']:.2%}, "
+                f"final_equity={summary['final_equity']:.2f}"
+            )
         )
 
     if summaries:
